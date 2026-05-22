@@ -347,8 +347,8 @@ def run_process():
                                 col_idx = index_col_count + i
                                 chart.add_series({
                                     'name': [sh_name, 0, col_idx],
-                                    'categories': [sh_name, 1, 0, rows-2, 0],
-                                    'values': [sh_name, 1, col_idx, rows-2, col_idx],
+                                    'categories': [sh_name, 1, 0, rows-1, 0],
+                                    'values': [sh_name, 1, col_idx, rows-1, col_idx],
                                     'gap': 30
                                 })
                             chart.set_title({'name': f'{sh_name} Grafiği'})
