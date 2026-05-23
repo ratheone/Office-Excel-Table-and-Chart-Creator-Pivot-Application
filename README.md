@@ -5,6 +5,7 @@ Dinamik Pivot Oluşturucu v13.5
 - Ayarları Temizle Butonu (Onaylı)
 - Sabit Background.png (Transparan uyumlu)
 - EXE Dönüştürme Uyumluluğu Eklendi
+- CSV ve XLSX Okuma/Kaydetme Desteği (Hata Giderildi)
 """
 import pandas as pd
 import openpyxl
@@ -35,7 +36,6 @@ bg_label_widget = None
 def get_app_path():
     """Exe veya script'in çalıştığı klasörü bulur."""
     if getattr(sys, 'frozen', False):
-        # PyInstaller ile paketlenmişse (Temp klasörü değil, exe'nin olduğu yer)
         return os.path.dirname(sys.executable)
     else:
         return os.path.dirname(os.path.abspath(__file__))
@@ -48,12 +48,17 @@ def load_source_headers():
     global loaded_columns
     file_path = filedialog.askopenfilename(
         title="Sütun İsimlerini Okumak İçin Örnek Dosya Seçin", 
-        filetypes=[("Excel Files", "*.xlsx *.xls")]
+        filetypes=[("Veri Dosyaları", "*.xlsx *.xls *.csv"), ("Excel Files", "*.xlsx *.xls"), ("CSV Files", "*.csv")]
     )
     if not file_path: return
 
     try:
-        df = pd.read_excel(file_path, sheet_name=0, nrows=0)
+        if file_path.lower().endswith('.csv'):
+            # CSV ayırıcıyı otomatik bul (sep=None) ve Türkçe karakter desteği (utf-8-sig)
+            df = pd.read_csv(file_path, sep=None, engine='python', nrows=0, encoding='utf-8-sig')
+        else:
+            df = pd.read_excel(file_path, sheet_name=0, nrows=0)
+            
         loaded_columns = list(df.columns)
         
         lbl_status.config(text=f"✅ {len(loaded_columns)} adet sütun hafızaya alındı. Kutucuklara çift tıklayın!", fg="green")
@@ -279,17 +284,32 @@ def run_process():
         messagebox.showwarning("Uyarı", "Lütfen ayar giriniz.")
         return
     save_last_session()
-    file_paths = filedialog.askopenfilenames(title="Raporlanacak Dosyaları Seç", filetypes=[("Excel Files", "*.xlsx *.xls")])
+    
+    file_paths = filedialog.askopenfilenames(
+        title="Raporlanacak Dosyaları Seç", 
+        filetypes=[("Veri Dosyaları", "*.xlsx *.xls *.csv"), ("Excel Files", "*.xlsx *.xls"), ("CSV Files", "*.csv")]
+    )
+    
     if not file_paths: return
     count = 0
     errors = []
     for path in file_paths:
         try:
-            xl = pd.ExcelFile(path)
-            if not xl.sheet_names: continue
-            df = pd.read_excel(path, sheet_name=0)
-            with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
-                df.to_excel(writer, sheet_name=xl.sheet_names[0], index=False)
+            is_csv = path.lower().endswith('.csv')
+            if is_csv:
+                # CSV Okuma (Hata Giderildi: sep=None ve encoding eklendi)
+                df = pd.read_csv(path, sep=None, engine='python', encoding='utf-8-sig')
+                original_sheet_name = "Veri_Seti"
+                output_path = os.path.splitext(path)[0] + "_Pivot.xlsx"
+            else:
+                # Excel Okuma
+                xl = pd.ExcelFile(path)
+                df = pd.read_excel(path, sheet_name=0)
+                original_sheet_name = xl.sheet_names[0]
+                output_path = path
+
+            with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
+                df.to_excel(writer, sheet_name=original_sheet_name, index=False)
                 wb = writer.book
                 fmt_header_left = wb.add_format({'bold': True, 'bg_color': '#4472C4', 'font_color': 'white', 'border': 1, 'align': 'left', 'valign': 'vcenter', 'indent': 1})
                 fmt_header_center = wb.add_format({'bold': True, 'bg_color': '#4472C4', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
@@ -298,6 +318,7 @@ def run_process():
                 fmt_blue_num = wb.add_format({'bg_color': '#DDEBF7', 'border': 1, 'num_format': '#,##0.00', 'bold': True})
                 fmt_blue_str = wb.add_format({'bg_color': '#DDEBF7', 'border': 1, 'bold': True, 'align': 'left'})
                 fmt_pink_pct = wb.add_format({'bg_color': '#F2DCDB', 'border': 1, 'num_format': '0.00%', 'bold': True})
+                
                 for cfg in valid_configs:
                     idx = [x.strip() for x in cfg["index"].split(',') if x.strip()]
                     col = [x.strip() for x in cfg["columns"].split(',') if x.strip()]
@@ -347,6 +368,7 @@ def run_process():
                                 col_idx = index_col_count + i
                                 chart.add_series({
                                     'name': [sh_name, 0, col_idx],
+                                    # rows-1 kullanılarak en alttaki Genel Toplam satırı grafik dışı bırakıldı
                                     'categories': [sh_name, 1, 0, rows-1, 0],
                                     'values': [sh_name, 1, col_idx, rows-1, col_idx],
                                     'gap': 30
